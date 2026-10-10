@@ -8,6 +8,10 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 DetectorFactory.seed = 0  # langdetect is random by default; fix it for repeatable results
 
 
+class InsufficientData(ValueError):
+    """The input is too small or too uniform for an analysis; the message is shown to the user."""
+
+
 def split_sentences(text: str) -> list[str]:
     """Split text into sentences with NLTK's Punkt model."""
     return sent_tokenize(text)

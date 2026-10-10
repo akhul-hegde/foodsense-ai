@@ -2,6 +2,7 @@
 
 import csv
 import io
+import random
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -13,7 +14,9 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
-from src import basic_stats, ngrams, preprocess, scraper, tfidf
+from src import (
+    aspects, basic_stats, emotion, hf, ner, ngrams, pos_embed, preprocess, scraper, sentiment, summary, tfidf, topics,
+)
 from src.ngram_lm import BigramLM, corpus_sentences, sentence_tokens
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "reviews.csv"
@@ -227,6 +230,154 @@ def sentence_probability(body: SentenceBody) -> dict:
     if not tokens:
         raise HTTPException(400, "The sentence has no words.")
     return {"sentence": body.sentence, **language_model().score(tokens)}
+
+
+# ---- English-only analyses (models and lexicons below are English) ----
+
+def english_positions() -> list[int]:
+    return store.cached("english", lambda: [i for i, t in enumerate(store.dataset.texts) if preprocess.is_english(t)])
+
+
+def english_input() -> tuple[list[Review], list[str]]:
+    """The current dataset's English reviews, and notes for the response (a fresh list per request)."""
+    positions = english_positions()
+    total = len(store.dataset.reviews)
+    if not positions:
+        raise HTTPException(422, f"None of the {total} reviews contain English text; this analysis supports English only.")
+    notes = []
+    if len(positions) < total:
+        notes.append(f"Skipped {total - len(positions)} of {total} reviews that are not in English or have no words.")
+    return [store.dataset.reviews[i] for i in positions], notes
+
+
+def english_clean_docs() -> list[list[str]]:
+    docs = clean_docs()
+    return [docs[i] for i in english_positions()]
+
+
+def english_lemma_docs() -> list[list[str]]:
+    docs = lemma_docs()
+    return [docs[i] for i in english_positions()]
+
+
+def analysis(key: str, compute: Callable[[], Any], notes: list[str]) -> Any:
+    """A cached result; too little data becomes a 422 and a missing model a 503 instead of a 500."""
+    try:
+        return store.cached(key, compute)
+    except basic_stats.InsufficientData as exc:
+        raise HTTPException(422, " ".join([str(exc), *notes]))
+    except (hf.ModelUnavailable, ner.ModelNotInstalled) as exc:
+        raise HTTPException(503, str(exc))
+
+
+def transformer_sample(texts: list[str], notes: list[str]) -> tuple[list[str], dict]:
+    """At most hf.MAX_REVIEWS texts (a fixed random sample when there are more), noting any cut."""
+    limit = hf.MAX_REVIEWS
+    used = texts
+    if len(texts) > limit:
+        used = [texts[i] for i in sorted(random.Random(0).sample(range(len(texts)), limit))]
+        notes.append(f"Transformer inference is capped at {limit} reviews on CPU: "
+                     f"scored a random sample of {limit} of {len(texts)} reviews.")
+    return used, {"limit": limit, "used": len(used), "total": len(texts), "capped": len(used) < len(texts)}
+
+
+def scored_sentences() -> list[aspects.ScoredSentence]:
+    reviews, _ = english_input()
+    return store.cached("sentences", lambda: aspects.score_sentences([r.text for r in reviews]))
+
+
+@api.get("/linguistics")
+def linguistics(term: str = Query("food", description="Word to find neighbours for"), k: int = Query(10, ge=1, le=50)) -> dict:
+    reviews, notes = english_input()
+    pos = analysis("pos", lambda: pos_embed.pos_distribution([r.text for r in reviews]), notes)
+    model = analysis("w2v", lambda: pos_embed.train_word2vec(english_clean_docs()), notes)
+    query = term.strip().lower()
+    nearest = pos_embed.nearest_words(model, query, k)
+    if not nearest:
+        notes.append(f'"{query}" is not in the Word2Vec vocabulary (stopwords and words seen fewer than '
+                     f'{model.min_count} times are left out).')
+    try:
+        classifier = store.cached("w2v_classifier", lambda: pos_embed.embedding_classifier(
+            english_clean_docs(), [r.rating for r in reviews]))
+    except basic_stats.InsufficientData as exc:
+        classifier = None
+        notes.append(f"Embedding classifier skipped: {exc}")
+    return {
+        "reviews_analysed": len(reviews),
+        "pos": pos,
+        "word2vec": {
+            "vocab_size": len(model.wv),
+            "vector_size": model.vector_size,
+            "query": query,
+            "in_vocab": query in model.wv,
+            "nearest": nearest,
+        },
+        "classifier": classifier,
+        "notes": notes,
+    }
+
+
+@api.get("/entities")
+def entities() -> dict:
+    reviews, notes = english_input()
+    result = analysis("entities", lambda: ner.analyse([r.text for r in reviews]), notes)
+    return {"reviews_analysed": len(reviews), **result, "notes": notes}
+
+
+@api.get("/topics")
+def topic_model() -> dict:
+    reviews, notes = english_input()
+    result = analysis("topics", lambda: topics.lda_topics(english_lemma_docs()), notes)
+    return {"reviews_analysed": len(reviews), **result, "notes": notes}
+
+
+@api.get("/sentiment")
+def sentiment_comparison() -> dict:
+    reviews, notes = english_input()
+    result = analysis("sentiment", lambda: sentiment.compare([r.text for r in reviews], [r.rating for r in reviews]), notes)
+    if result["dropped"]:
+        notes.append(f"Dropped {result['dropped']} reviews rated between 2 and 4 stars or with no rating (labels: >= 4 positive, <= 2 negative).")
+    if result["capped"]:
+        notes.append(f"Transformer inference is capped at {hf.MAX_REVIEWS} reviews on CPU: both models were scored "
+                     f"on the same {result['evaluated']} of {result['test_size']} held-out reviews.")
+    inference = {"limit": hf.MAX_REVIEWS, "used": result["evaluated"], "total": result["test_size"], "capped": result["capped"]}
+    return {"reviews_analysed": len(reviews), **result, "inference": inference, "notes": notes}
+
+
+@api.get("/emotion")
+def emotions() -> dict:
+    reviews, notes = english_input()
+    texts, inference = transformer_sample([r.text for r in reviews], notes)
+    result = analysis("emotion", lambda: emotion.emotion_counts(texts), notes)
+    return {"reviews_analysed": len(texts), **result, "inference": inference, "notes": notes}
+
+
+@api.get("/aspects")
+def aspect_sentiment() -> dict:
+    reviews, notes = english_input()
+    sentences = scored_sentences()
+    return {
+        "reviews_analysed": len(reviews),
+        "sentence_count": len(sentences),
+        "sentences_without_aspect": sum(1 for s in sentences if not s.aspects),
+        "scorer": "VADER compound score per sentence (>= 0.05 positive, <= -0.05 negative)",
+        "aspects": store.cached("aspects", lambda: aspects.aspect_summary(sentences)),
+        "notes": notes,
+    }
+
+
+@api.get("/summary")
+def review_summary(k: int = Query(5, ge=1, le=20), sentences: int = Query(3, ge=1, le=10)) -> dict:
+    reviews, notes = english_input()
+    scored = scored_sentences()
+    found = analysis("entities", lambda: ner.analyse([r.text for r in reviews]), notes)
+    return {
+        "reviews_analysed": len(reviews),
+        "top_dishes": found["dishes"][:k],
+        "top_complaints": summary.top_complaints(scored, k),
+        "summary": store.cached(f"summary:{sentences}", lambda: summary.extractive_summary([s.text for s in scored], sentences)),
+        "notes": notes,
+    }
 
 
 app.include_router(api)

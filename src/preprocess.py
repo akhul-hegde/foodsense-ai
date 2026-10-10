@@ -10,7 +10,7 @@ from nltk import pos_tag
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 
-from src.basic_stats import word_tokens
+from src.basic_stats import detect_language, word_tokens
 
 # NLTK data packages this project needs, keyed by the path nltk.data.find looks for.
 NLTK_RESOURCES = {
@@ -18,12 +18,18 @@ NLTK_RESOURCES = {
     "corpora/stopwords": "stopwords",
     "corpora/wordnet.zip": "wordnet",
     "taggers/averaged_perceptron_tagger_eng": "averaged_perceptron_tagger_eng",
+    "taggers/universal_tagset": "universal_tagset",
+    "sentiment/vader_lexicon.zip": "vader_lexicon",
 }
 
 # Negations flip sentiment ("not fresh"), so they are kept even though NLTK lists them as stopwords.
 NEGATIONS = {"no", "not", "nor", "never"}
 
 URL_PATTERN = re.compile(r"https?://\S+|www\.\S+")
+
+# langdetect guesses wrong on very short texts ("Good food" -> Somali), so below this many words
+# a text counts as English when most of its words are English stopwords or WordNet entries.
+SHORT_TEXT_WORDS = 5
 
 _stemmer = PorterStemmer()
 _lemmatizer = WordNetLemmatizer()
@@ -46,6 +52,17 @@ def stopword_set() -> frozenset[str]:
     return frozenset(stopwords.words("english")) - NEGATIONS
 
 
+def is_english(text: str) -> bool:
+    """True for English text; False for other languages and for text with no words."""
+    words = [w.lower() for w in word_tokens(URL_PATTERN.sub(" ", text)) if w.isalpha()]
+    if not words:
+        return False
+    if len(words) >= SHORT_TEXT_WORDS:
+        return detect_language(text) == "en"
+    known = sum(1 for w in words if w in stopword_set() or w in NEGATIONS or wordnet.synsets(w))
+    return known / len(words) > 0.5
+
+
 def clean_tokens(text: str) -> list[str]:
     """Lowercase, strip URLs, keep alphabetic words, expand "n't" to "not", drop stopwords."""
     text = URL_PATTERN.sub(" ", text.lower())
@@ -65,7 +82,11 @@ def _wordnet_pos(treebank_tag: str) -> str:
 
 def lemmatize_tokens(tokens: list[str]) -> list[str]:
     """Reduce words to their dictionary form, using POS tags ("was" -> "be", "dishes" -> "dish")."""
-    return [_lemmatizer.lemmatize(token, _wordnet_pos(tag)) for token, tag in pos_tag(tokens)]
+    # Pronouns stay as they are: WordNet would read "us" as the noun plural of "u".
+    return [
+        token if tag.startswith("PRP") else _lemmatizer.lemmatize(token, _wordnet_pos(tag))
+        for token, tag in pos_tag(tokens)
+    ]
 
 
 def preprocess_review(text: str) -> dict:

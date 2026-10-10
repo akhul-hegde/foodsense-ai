@@ -1,7 +1,7 @@
 import math
 
 from src.basic_stats import detect_language, overview, split_sentences, tokenize, word_tokens
-from src.preprocess import clean_tokens, lemmatize_tokens, preprocess_review, stem_tokens
+from src.preprocess import clean_tokens, is_english, lemmatize_tokens, preprocess_review, stem_tokens
 from src.tfidf import top_terms
 
 
@@ -40,6 +40,18 @@ def test_stemming() -> None:
 
 def test_lemmatization_uses_pos() -> None:
     assert lemmatize_tokens(["dishes", "were", "better"]) == ["dish", "be", "good"]
+
+
+def test_lemmatization_keeps_pronouns() -> None:
+    assert lemmatize_tokens(["staff", "ignored", "us"]) == ["staff", "ignore", "us"]
+
+
+def test_is_english() -> None:
+    assert is_english("The food was delicious and the staff were friendly.")
+    assert is_english("Good food")  # langdetect alone calls this Somali
+    assert not is_english("La comida estaba deliciosa y el servicio fue excelente.")
+    assert not is_english("Muy bueno")
+    assert not is_english("10/10 !!!")
 
 
 def test_preprocess_review_lines_up_columns() -> None:
