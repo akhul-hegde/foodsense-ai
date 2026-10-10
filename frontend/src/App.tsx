@@ -8,6 +8,7 @@ import { useHashRoute } from '@/lib/use-hash-route'
 import { OverviewPage } from '@/pages/overview-page'
 import { PlaceholderPage } from '@/pages/placeholder-page'
 import { PreprocessingPage } from '@/pages/preprocessing-page'
+import { SentimentPage } from '@/pages/sentiment-page'
 
 // Development-only gallery of the shared components in every state, at #/preview.
 const ComponentPreview = import.meta.env.DEV ? lazy(() => import('@/dev/component-preview')) : null
@@ -26,6 +27,8 @@ function Page({ item }: { item: NavItem }) {
       return <OverviewPage />
     case 'preprocessing':
       return <PreprocessingPage />
+    case 'sentiment':
+      return <SentimentPage />
     default:
       return <PlaceholderPage item={item} />
   }
