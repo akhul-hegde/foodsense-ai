@@ -224,3 +224,6 @@ __pycache__/
 data/raw/
 data/google_clean.csv
 data/tripadvisor_clean.csv
+
+# The frontend source has its own lib/ folder (the Python lib/ rule above would ignore it)
+!frontend/src/lib/

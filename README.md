@@ -86,6 +86,20 @@ Notes on behaviour:
 - **Aspect scoring**: aspects are found per sentence with a keyword lexicon (`src/aspects.py`)
   and scored with NLTK's VADER, so `/aspects` and `/summary` cover the whole dataset.
 
+## Frontend
+
+A React dashboard in `frontend/` (Vite, TypeScript, Tailwind, shadcn/ui, Recharts). Requires Node 20+.
+With the API running on port 8000:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. The dev server proxies `/api` to `http://localhost:8000` (set
+`API_TARGET` to change it). In development, `#/preview` shows the shared components in each state.
+
 ## Tests
 
 ```bash
