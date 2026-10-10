@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { DatasetProvider, useDataset } from '@/lib/dataset'
 import { findNavItem, type NavItem, type PageId } from '@/lib/nav'
 import { useHashRoute } from '@/lib/use-hash-route'
+import { AspectsPage } from '@/pages/aspects-page'
 import { OverviewPage } from '@/pages/overview-page'
 import { PlaceholderPage } from '@/pages/placeholder-page'
 import { PreprocessingPage } from '@/pages/preprocessing-page'
@@ -29,6 +30,8 @@ function Page({ item }: { item: NavItem }) {
       return <PreprocessingPage />
     case 'sentiment':
       return <SentimentPage />
+    case 'aspects':
+      return <AspectsPage />
     default:
       return <PlaceholderPage item={item} />
   }
