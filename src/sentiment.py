@@ -71,7 +71,14 @@ def evaluate(y_true: list[str], y_pred: list[str]) -> dict:
 
 def train_baseline(texts: list[str], labels: list[str]):
     """TF-IDF over words and word pairs (keeps "not good"), then logistic regression."""
-    model = make_pipeline(TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True), LogisticRegression(max_iter=1000))
+    # class_weight="balanced" because the labels are skewed (~83% positive on data/reviews.csv).
+    # Before, with the default LogisticRegression(max_iter=1000), the baseline predicted "positive"
+    # for every held-out review: accuracy 0.837, macro precision 0.4185, recall 0.5, F1 0.4556,
+    # confusion matrix [[0, 30], [0, 154]] (0 of 30 negatives found).
+    model = make_pipeline(
+        TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True),
+        LogisticRegression(max_iter=1000, class_weight="balanced"),
+    )
     return model.fit(texts, labels)
 
 

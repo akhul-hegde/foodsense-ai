@@ -3,7 +3,7 @@ from collections import Counter
 import pytest
 
 from src.basic_stats import InsufficientData
-from src.sentiment import NEGATIVE, POSITIVE, evaluate, label_from_rating, label_ratings, stratified_split
+from src.sentiment import NEGATIVE, POSITIVE, evaluate, label_from_rating, label_ratings, stratified_split, train_baseline
 
 
 @pytest.mark.parametrize("rating, label", [
@@ -53,3 +53,12 @@ def test_evaluate_confusion_matrix_rows_are_true_labels() -> None:
     # Macro average: negative P=1, R=0.5; positive P=2/3, R=1.
     assert result["precision"] == round((1 + 2 / 3) / 2, 4)
     assert result["recall"] == 0.75
+
+
+def test_baseline_predicts_negative_on_imbalanced_data() -> None:
+    # 18 positive vs 4 negative: without class_weight="balanced" the baseline answers "positive" for everything.
+    positive = ["great food and friendly staff", "delicious pasta, lovely place", "excellent service, loved it"] * 6
+    negative = ["terrible food and rude staff", "awful cold soup, horrible service", "disgusting, never again", "bad slow service"]
+    model = train_baseline(positive + negative, [POSITIVE] * len(positive) + [NEGATIVE] * len(negative))
+    predictions = model.predict(["terrible rude service", "awful disgusting food"])
+    assert NEGATIVE in predictions
