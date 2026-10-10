@@ -221,3 +221,4 @@ __marimo__/
 .env
 node_modules/
 __pycache__/
+data/raw/
