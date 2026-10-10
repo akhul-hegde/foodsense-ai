@@ -222,3 +222,5 @@ __marimo__/
 node_modules/
 __pycache__/
 data/raw/
+data/google_clean.csv
+data/tripadvisor_clean.csv
