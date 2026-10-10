@@ -3,8 +3,9 @@ import { lazy, Suspense } from 'react'
 import { AppShell } from '@/components/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { DatasetProvider, useDataset } from '@/lib/dataset'
-import { findNavItem, type PageId } from '@/lib/nav'
+import { findNavItem, type NavItem, type PageId } from '@/lib/nav'
 import { useHashRoute } from '@/lib/use-hash-route'
+import { OverviewPage } from '@/pages/overview-page'
 import { PlaceholderPage } from '@/pages/placeholder-page'
 
 // Development-only gallery of the shared components in every state, at #/preview.
@@ -16,6 +17,10 @@ export default function App() {
       <Routes />
     </DatasetProvider>
   )
+}
+
+function Page({ item }: { item: NavItem }) {
+  return item.id === 'overview' ? <OverviewPage /> : <PlaceholderPage item={item} />
 }
 
 function Routes() {
@@ -41,7 +46,7 @@ function Routes() {
           <ComponentPreview />
         </Suspense>
       ) : (
-        <PlaceholderPage key={item.id} item={item} />
+        <Page key={item.id} item={item} />
       )}
     </AppShell>
   )
